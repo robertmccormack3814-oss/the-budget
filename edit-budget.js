@@ -1,6 +1,6 @@
 (() => {
   const tables=[...document.querySelectorAll('.budget-table')]; if(!tables.length)return;
-  const key=`the-budget:${location.pathname}:v1`;
+  const key=`the-budget:${location.pathname}:v2`;
   const fmt=new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',minimumFractionDigits:2,maximumFractionDigits:2});
   const num=v=>{const n=Number(String(v).replace(/[^0-9.-]/g,''));return Number.isFinite(n)?n:0};
   const style=document.createElement('style');style.textContent=`
@@ -23,6 +23,14 @@
     tables[2].closest('.card')?.appendChild(status);
   }
 
+  const hadSaved=!!localStorage.getItem(key);
+  load();
+  if(!hadSaved && tables[1] && tables[2]){
+    const spendingHB=find(tables[1],'HB Tax Income + Shortfall');
+    const allocationHB=find(tables[2],'HB Tax Income + Shortfall');
+    if(spendingHB && allocationHB) set(allocationHB,num(spendingHB.cells[1].textContent));
+  }
+
   const calc=()=>{
     if(tables.length<2)return;
     const net=editable(tables[0]).reduce((s,r)=>s+num(r.cells[1].textContent),0);
@@ -42,14 +50,15 @@
         const balanced=Math.abs(diff)<0.01;
         status.className=`allocation-status ${balanced?'balanced':'unbalanced'}`;
         status.textContent=balanced
-          ? `Balanced: total account allocation equals net income (${fmt.format(net)} annually).`
-          : `${diff>0?'Unallocated':'Over-allocated'}: ${fmt.format(Math.abs(diff))} annually (${fmt.format(Math.abs(diff)/26)} per fortnight).`;
+          ? `Balanced: total account allocation equals NET income (${fmt.format(net)} annually).`
+          : `${diff>0?'Unallocated':'Over-allocated'} versus NET income: ${fmt.format(Math.abs(diff))} annually (${fmt.format(Math.abs(diff)/26)} per fortnight).`;
       }
     }
     [sav,sav/12,sav/26,sav/52].forEach((v,i)=>{const el=document.querySelectorAll('.hero .kpi .value')[i];if(el){el.textContent=fmt.format(v);el.classList.toggle('negative',v<0);el.classList.toggle('positive',v>=0)}})
   };
-  load();
+
   tables.forEach((t,ti)=>editable(t).forEach(r=>{const n=r.cells[0],a=r.cells[1];if(ti===2&&n.textContent.trim()==='Savings'){r.classList.add('calculated-row');return}n.contentEditable='true';a.contentEditable='true';n.classList.add('editable-cell');a.classList.add('editable-cell','editable-money');n.title='Click to edit item name';a.title='Click to edit annual amount';n.addEventListener('input',save);a.addEventListener('focus',()=>{a.textContent=String(num(a.textContent));const rg=document.createRange();rg.selectNodeContents(a);const s=window.getSelection();s.removeAllRanges();s.addRange(rg)});a.addEventListener('input',()=>{const v=num(a.textContent);r.cells[2].textContent=fmt.format(v/12);r.cells[3].textContent=fmt.format(v/26);r.cells[4].textContent=fmt.format(v/52);calc();save()});a.addEventListener('blur',()=>{set(r,num(a.textContent));calc();save()});a.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();a.blur()}})}));
-  const note=document.createElement('div');note.className='edit-notice';note.innerHTML='<div><strong>Editable budget</strong><span>Click an item name or Annual amount. Monthly = Annual ÷ 12, Fortnightly = Annual ÷ 26, Weekly = Annual ÷ 52. Changes save on this device.</span></div><button class="reset-budget" type="button">Reset edits</button>';document.querySelector('.budget-card')?.before(note);note.querySelector('button').addEventListener('click',()=>{localStorage.removeItem(key);location.reload()});
+  const note=document.createElement('div');note.className='edit-notice';note.innerHTML='<div><strong>Editable budget</strong><span>Click an item name or Annual amount. Monthly = Annual ÷ 12, Fortnightly = Annual ÷ 26, Weekly = Annual ÷ 52. Account Allocation is checked against NET income after tax and deductions.</span></div><button class="reset-budget" type="button">Reset edits</button>';document.querySelector('.budget-card')?.before(note);note.querySelector('button').addEventListener('click',()=>{localStorage.removeItem(key);location.reload()});
   calc();
+  save();
 })();
