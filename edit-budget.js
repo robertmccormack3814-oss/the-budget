@@ -4,14 +4,50 @@
   const fmt=new Intl.NumberFormat('en-AU',{style:'currency',currency:'AUD',minimumFractionDigits:2,maximumFractionDigits:2});
   const num=v=>{const n=Number(String(v).replace(/[^0-9.-]/g,''));return Number.isFinite(n)?n:0};
   const style=document.createElement('style');style.textContent=`
-    .edit-notice{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:18px 0;padding:16px 18px;border:1px solid rgba(84,225,207,.22);background:rgba(84,225,207,.07);border-radius:16px;color:#dce8ee}.edit-notice strong{display:block;color:#54e1cf;margin-bottom:4px}.edit-notice span{display:block;color:#98a8ba;font-size:12px}.reset-budget{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#dce8ee;padding:9px 12px;border-radius:10px;cursor:pointer;white-space:nowrap}.editable-cell{cursor:text;outline:none}.editable-cell:hover{background:rgba(108,185,255,.08)}.editable-cell:focus{background:rgba(108,185,255,.13);box-shadow:inset 0 0 0 1px rgba(108,185,255,.45)}.editable-money{font-weight:800;color:#6cb9ff}.calculated-row td{opacity:.86}@media(max-width:620px){.edit-notice{align-items:flex-start;flex-direction:column}}
+    .edit-notice{display:flex;justify-content:space-between;align-items:center;gap:18px;margin:18px 0;padding:16px 18px;border:1px solid rgba(84,225,207,.22);background:rgba(84,225,207,.07);border-radius:16px;color:#dce8ee}.edit-notice strong{display:block;color:#54e1cf;margin-bottom:4px}.edit-notice span{display:block;color:#98a8ba;font-size:12px}.reset-budget{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#dce8ee;padding:9px 12px;border-radius:10px;cursor:pointer;white-space:nowrap}.editable-cell{cursor:text;outline:none}.editable-cell:hover{background:rgba(108,185,255,.08)}.editable-cell:focus{background:rgba(108,185,255,.13);box-shadow:inset 0 0 0 1px rgba(108,185,255,.45)}.editable-money{font-weight:800;color:#6cb9ff}.calculated-row td{opacity:.86}.allocation-status{margin-top:12px;padding:12px 14px;border-radius:12px;font-size:12px}.allocation-status.balanced{background:rgba(92,225,154,.08);border:1px solid rgba(92,225,154,.22);color:#b9efd1}.allocation-status.unbalanced{background:rgba(255,199,100,.08);border:1px solid rgba(255,199,100,.22);color:#f3dca8}@media(max-width:620px){.edit-notice{align-items:flex-start;flex-direction:column}}
   `;document.head.appendChild(style);
   const set=(row,a)=>{if(!row||row.cells.length<5)return;[a,a/12,a/26,a/52].forEach((v,i)=>{const c=row.cells[i+1];c.textContent=fmt.format(v);c.classList.toggle('negative',v<0);c.classList.toggle('positive',v>=0&&row.classList.contains('total-row'))})};
   const editable=t=>[...t.tBodies[0].rows].filter(r=>!r.classList.contains('total-row'));
   const find=(t,label)=>[...t.tBodies[0].rows].find(r=>r.cells[0]?.textContent.trim()===label);
   const save=()=>localStorage.setItem(key,JSON.stringify(tables.map(t=>editable(t).map(r=>({name:r.cells[0].textContent.trim(),annual:num(r.cells[1].textContent)})))));
   const load=()=>{try{const s=JSON.parse(localStorage.getItem(key)||'null');if(!Array.isArray(s))return;tables.forEach((t,ti)=>editable(t).forEach((r,ri)=>{const x=s[ti]?.[ri];if(x){r.cells[0].textContent=x.name;set(r,+x.annual||0)}}))}catch(e){}};
-  const calc=()=>{if(tables.length<2)return;const net=editable(tables[0]).reduce((s,r)=>s+num(r.cells[1].textContent),0);const out=editable(tables[1]).reduce((s,r)=>s+num(r.cells[1].textContent),0);const sav=net-out;set(find(tables[0],'Net Income'),net);set(find(tables[1],'Total Outgoing'),out);set(find(tables[1],'Savings'),sav);if(tables[2])set(find(tables[2],'Savings'),sav);[sav,sav/12,sav/26,sav/52].forEach((v,i)=>{const el=document.querySelectorAll('.hero .kpi .value')[i];if(el){el.textContent=fmt.format(v);el.classList.toggle('negative',v<0);el.classList.toggle('positive',v>=0)}})};
+
+  if(tables[2] && !find(tables[2],'Total Allocation')){
+    const tr=document.createElement('tr');
+    tr.className='total-row calculated-row';
+    tr.innerHTML='<td>Total Allocation</td><td>$0.00</td><td>$0.00</td><td>$0.00</td><td>$0.00</td>';
+    tables[2].tBodies[0].appendChild(tr);
+    const status=document.createElement('div');
+    status.className='allocation-status';
+    status.id='allocation-status';
+    tables[2].closest('.card')?.appendChild(status);
+  }
+
+  const calc=()=>{
+    if(tables.length<2)return;
+    const net=editable(tables[0]).reduce((s,r)=>s+num(r.cells[1].textContent),0);
+    const out=editable(tables[1]).reduce((s,r)=>s+num(r.cells[1].textContent),0);
+    const sav=net-out;
+    set(find(tables[0],'Net Income'),net);
+    set(find(tables[1],'Total Outgoing'),out);
+    set(find(tables[1],'Savings'),sav);
+    if(tables[2]){
+      set(find(tables[2],'Savings'),sav);
+      const allocationRows=editable(tables[2]);
+      const allocationTotal=allocationRows.reduce((s,r)=>s+num(r.cells[1].textContent),0);
+      set(find(tables[2],'Total Allocation'),allocationTotal);
+      const diff=net-allocationTotal;
+      const status=document.getElementById('allocation-status');
+      if(status){
+        const balanced=Math.abs(diff)<0.01;
+        status.className=`allocation-status ${balanced?'balanced':'unbalanced'}`;
+        status.textContent=balanced
+          ? `Balanced: total account allocation equals net income (${fmt.format(net)} annually).`
+          : `${diff>0?'Unallocated':'Over-allocated'}: ${fmt.format(Math.abs(diff))} annually (${fmt.format(Math.abs(diff)/26)} per fortnight).`;
+      }
+    }
+    [sav,sav/12,sav/26,sav/52].forEach((v,i)=>{const el=document.querySelectorAll('.hero .kpi .value')[i];if(el){el.textContent=fmt.format(v);el.classList.toggle('negative',v<0);el.classList.toggle('positive',v>=0)}})
+  };
   load();
   tables.forEach((t,ti)=>editable(t).forEach(r=>{const n=r.cells[0],a=r.cells[1];if(ti===2&&n.textContent.trim()==='Savings'){r.classList.add('calculated-row');return}n.contentEditable='true';a.contentEditable='true';n.classList.add('editable-cell');a.classList.add('editable-cell','editable-money');n.title='Click to edit item name';a.title='Click to edit annual amount';n.addEventListener('input',save);a.addEventListener('focus',()=>{a.textContent=String(num(a.textContent));const rg=document.createRange();rg.selectNodeContents(a);const s=window.getSelection();s.removeAllRanges();s.addRange(rg)});a.addEventListener('input',()=>{const v=num(a.textContent);r.cells[2].textContent=fmt.format(v/12);r.cells[3].textContent=fmt.format(v/26);r.cells[4].textContent=fmt.format(v/52);calc();save()});a.addEventListener('blur',()=>{set(r,num(a.textContent));calc();save()});a.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();a.blur()}})}));
   const note=document.createElement('div');note.className='edit-notice';note.innerHTML='<div><strong>Editable budget</strong><span>Click an item name or Annual amount. Monthly = Annual ÷ 12, Fortnightly = Annual ÷ 26, Weekly = Annual ÷ 52. Changes save on this device.</span></div><button class="reset-budget" type="button">Reset edits</button>';document.querySelector('.budget-card')?.before(note);note.querySelector('button').addEventListener('click',()=>{localStorage.removeItem(key);location.reload()});
